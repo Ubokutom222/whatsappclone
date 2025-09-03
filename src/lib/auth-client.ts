@@ -5,3 +5,5 @@ export const authClient = createAuthClient({
   //you can pass client configuration here
   plugins: [nextCookies()],
 });
+
+export type Session = typeof authClient.$Infer.Session;
