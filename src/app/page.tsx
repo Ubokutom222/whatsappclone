@@ -1,3 +1,12 @@
-export default function HomePage() {
-  return <div>This is the homepage</div>;
+import { HomeView } from "@/modules/home/views/HomeView";
+import { trpc } from "@/trpc/server";
+import { HydrateClient } from "@/trpc/server";
+
+export default async function HomePage() {
+  void (await trpc.home.getUsers.prefetch());
+  return (
+    <HydrateClient>
+      <HomeView />
+    </HydrateClient>
+  );
 }
