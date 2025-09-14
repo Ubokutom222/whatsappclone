@@ -23,7 +23,10 @@ const authRouter = createTRPCRouter({
         });
       } catch (error) {
         if (process.env.NODE_ENV === "development") console.log(error);
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Server Error",
+        });
       }
     }),
 });

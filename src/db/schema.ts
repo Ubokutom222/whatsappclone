@@ -1,4 +1,11 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  varchar,
+  primaryKey,
+} from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -59,3 +66,74 @@ export const verification = pgTable("verification", {
     () => /* @__PURE__ */ new Date(),
   ),
 });
+
+// Conversations
+export const conversations = pgTable("conversations", {
+  id: text("id").primaryKey(), // integer
+  isGroup: boolean("is_group").default(false).notNull(),
+  name: varchar("name", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Conversation Members
+export const conversationMembers = pgTable(
+  "conversation_members",
+  {
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }), // ✅ text -> text
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }), // ✅ text -> text
+    role: varchar("role", { length: 50 }).default("member"),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.conversationId, t.userId] }),
+  }),
+);
+
+// Messages
+export const messages = pgTable("messages", {
+  id: text("id").primaryKey(), // text
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }), // ✅ text -> text
+  senderId: text("sender_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }), // ✅ text -> text
+
+  content: text("content"),
+  messageType: varchar("message_type", { length: 50 }).default("text"),
+
+  mediaUrl: text("media_url"),
+  mediaThumbnail: text("media_thumbnail"),
+  mediaDuration: text("media_duration"),
+  mediaSize: text("media_size"),
+  mimeType: varchar("mime_type", { length: 100 }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  isDeleted: boolean("is_deleted").default(false),
+});
+
+// Message Receipts
+export const messageReceipts = pgTable(
+  "message_receipts",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }), // ✅ text -> text
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }), // ✅ text -> text
+    isDelivered: boolean("is_delivered").default(false),
+    deliveredAt: timestamp("delivered_at"),
+    isRead: boolean("is_read").default(false),
+    readAt: timestamp("read_at"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.messageId, t.userId] }),
+  }),
+);
