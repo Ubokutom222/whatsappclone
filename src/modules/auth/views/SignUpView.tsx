@@ -24,6 +24,8 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { trpc } from "@/trpc/client";
 import Link from "next/link";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 const formSchema = z.object({
   username: z
@@ -38,6 +40,7 @@ const formSchema = z.object({
 });
 export function SignUpView() {
   const [isPasswordSeen, setIsPasswordSeen] = useState<boolean>(false);
+  const router = useRouter();
 
   const form = useForm({
     resolver: zodResolver(formSchema),
@@ -49,7 +52,15 @@ export function SignUpView() {
     },
   });
 
-  const mutation = trpc.auth.signUp.useMutation();
+  const mutation = trpc.auth.signUp.useMutation({
+    onSuccess() {
+      toast.success("You have registered sucessfully. Redirecting....");
+      router.push("/");
+    },
+    onError(error) {
+      toast.error(error.message);
+    },
+  });
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     await mutation.mutateAsync({

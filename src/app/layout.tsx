@@ -5,6 +5,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TRPCProvider } from "@/trpc/client";
 import { ModalProvider } from "@/modules/providers/ModalProvider";
 import { ActiveChatContextProivder } from "@/modules/providers/ActiveChatProvider";
+import { SessionProvider } from "@/modules/providers/SessionProvider";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,9 +40,12 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <ActiveChatContextProivder>
-              <ModalProvider>{children}</ModalProvider>
-            </ActiveChatContextProivder>
+            <Toaster />
+            <SessionProvider>
+              <ActiveChatContextProivder>
+                <ModalProvider>{children}</ModalProvider>
+              </ActiveChatContextProivder>
+            </SessionProvider>
           </ThemeProvider>
         </TRPCProvider>
       </body>

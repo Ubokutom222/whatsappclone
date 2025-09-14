@@ -7,10 +7,16 @@ import { PlusIcon } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useModal } from "@/modules/providers/ModalProvider";
 import { ChatView } from "./ChatView";
+import { trpc } from "@/trpc/client";
+import { useSession } from "@/modules/providers/SessionProvider";
+import { useActiveChatContext } from "@/modules/providers/ActiveChatProvider";
 
 export function HomeView() {
   const isMobile = useIsMobile();
   const { openModal } = useModal();
+  const [data] = trpc.home.getConversations.useSuspenseQuery();
+  const { session } = useSession();
+  const { setActiveChat } = useActiveChatContext();
 
   const [hasMounted, setHasMounted] = useState<boolean>(false);
 
@@ -36,11 +42,29 @@ export function HomeView() {
         <div className="mx-2">
           <Input className="w-full text-base" placeholder="Search" />
         </div>
-        <ScrollArea className="overflow-y-auto">
+        <ScrollArea className="overflow-y-auto space-y-2">
           {/* No Chat Placeholder */}
-          <div className="size-full flex items-center justify-center text-muted-foreground">
-            No Chat Available
-          </div>
+          {data.length === 0 && null}
+          {data.length > 0 &&
+            data.map((item, index) => (
+              <div
+                key={index}
+                className="text-xl font-semibold px-4 py-2 rounded-lg hover:bg-muted-foreground/90"
+                onClick={() =>
+                  setActiveChat(
+                    item.members.filter(
+                      (mem) => mem.id !== (session?.user.id as string),
+                    )[0],
+                  )
+                }
+              >
+                {item.isGroup
+                  ? item.name
+                  : item.members.filter(
+                      (mem) => mem.id !== (session?.user.id as string),
+                    )[0].name}
+              </div>
+            ))}
         </ScrollArea>
         <Button
           size="lg"

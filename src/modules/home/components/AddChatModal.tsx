@@ -14,11 +14,16 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useActiveChatContext } from "@/modules/providers/ActiveChatProvider";
 import { useModal } from "@/modules/providers/ModalProvider";
+import { useSession } from "@/modules/providers/SessionProvider";
 
 export function AddChatModal() {
   const [data] = trpc.home.getUsers.useSuspenseQuery();
   const { setActiveChat } = useActiveChatContext();
   const { closeModal } = useModal();
+  const { session } = useSession();
+
+  const otherUsers = data.filter((user) => user.id !== session?.user.id);
+
   return (
     <DialogContent>
       <DialogHeader>
@@ -28,10 +33,10 @@ export function AddChatModal() {
         <CommandInput placeholder="Search Contact..." />
         <ScrollArea>
           <CommandList>
-            {data.map((user, index) => (
+            {otherUsers.map((user, index) => (
               <CommandItem
                 key={index}
-                onSelect={() => {
+                onSelect={async () => {
                   setActiveChat(user);
                   closeModal();
                 }}
