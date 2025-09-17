@@ -1,19 +1,16 @@
 "use client";
 import { useContext, createContext, useState, ReactNode } from "react";
+import { InferSelectModel } from "drizzle-orm";
+import { user, conversations } from "@/db/schema";
 
-type User = {
-  id: string;
-  email: string;
-  emailVerified: boolean;
-  name: string;
-  createdAt: Date;
-  updatedAt: Date;
-  image?: string | null | undefined;
-} | null;
+type Chat =
+  | InferSelectModel<typeof conversations>
+  | InferSelectModel<typeof user>
+  | null;
 
 interface ActiveChatContextProp {
-  activeChat: User;
-  setActiveChat: (user: User) => void;
+  activeChat: Chat;
+  setActiveChat: (user: Chat) => void;
 }
 
 const ActiveChatContext = createContext<ActiveChatContextProp | undefined>(
@@ -25,7 +22,7 @@ export function ActiveChatContextProivder({
 }: {
   children: ReactNode;
 }) {
-  const [activeChat, setActiveChat] = useState<User>(null);
+  const [activeChat, setActiveChat] = useState<Chat>(null);
 
   return (
     <ActiveChatContext.Provider value={{ activeChat, setActiveChat }}>
