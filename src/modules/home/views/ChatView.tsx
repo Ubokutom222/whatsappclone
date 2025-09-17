@@ -1,10 +1,55 @@
 "use client";
 import { useActiveChatContext } from "@/modules/providers/ActiveChatProvider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Mic, Paperclip } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Mic, Paperclip, Send } from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/trpc/client";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+const schema = z.object({
+  content: z.string(),
+});
 export function ChatView() {
   const { activeChat } = useActiveChatContext();
+  const { setValue, handleSubmit, resetField, register, watch } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      content: "",
+    },
+  });
+  const mutation = trpc.home.sendMessage.useMutation({
+    onError({ message }) {
+      toast.error(message);
+    },
+    onSuccess() {
+      toast.success("Message Sent Successfully");
+      resetField("content");
+    },
+  });
+  const [hasEnteredText, setHasEnteredText] = useState<boolean>(false);
+
+  async function onSend(data: z.infer<typeof schema>) {
+    if (!activeChat) return;
+
+    // If it's a group chat (conversation)
+    if ("isGroup" in activeChat && activeChat.isGroup) {
+      await mutation.mutateAsync({
+        conversationId: activeChat.id,
+        content: data.content,
+      });
+    }
+    // If it's a one-on-one chat (user)
+    else if ("email" in activeChat) {
+      await mutation.mutateAsync({
+        recipientId: activeChat.id,
+        content: data.content,
+      });
+    }
+  }
 
   if (!activeChat || activeChat === null) {
     return (
@@ -26,9 +71,18 @@ export function ChatView() {
         <Button size="lg">
           <Paperclip />
         </Button>
-        <Input className="w-full flex-1" placeholder="Type A Message..." />
-        <Button size="lg">
-          <Mic />
+        <Textarea
+          className="w-full flex-1 min-h-10 max-h-32 overflow-y-auto"
+          placeholder="Type A Message..."
+          {...register("content")}
+          value={watch("content")}
+          onChange={(e) => {
+            setValue("content", e.target.value);
+            setHasEnteredText(e.target.value.trim().length > 0);
+          }}
+        />
+        <Button size="lg" onClick={handleSubmit(onSend)}>
+          {hasEnteredText ? <Send /> : <Mic />}
         </Button>
       </div>
     </div>
