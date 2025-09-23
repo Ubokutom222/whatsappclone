@@ -1,20 +1,26 @@
 "use client";
 import { useActiveChatContext } from "@/modules/providers/ActiveChatProvider";
+import { useSession } from "@/modules/providers/SessionProvider";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Mic, Paperclip, Send } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/trpc/client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+// import { InferSelectModel } from "drizzle-orm";
+// import { messages as messageSchema } from "@/db/schema"
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const schema = z.object({
-  content: z.string(),
+  content: z.string().trim().min(1, "Message cannot be empty"),
 });
 export function ChatView() {
   const { activeChat } = useActiveChatContext();
+  const { session } = useSession();
+  const selfId = session?.user.id;
   const { setValue, handleSubmit, resetField, register, watch } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -30,19 +36,39 @@ export function ChatView() {
       resetField("content");
     },
   });
+  const { data, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    trpc.home.getMessages.useInfiniteQuery(
+      {
+        conversationId:
+          activeChat && "isGroup" in activeChat ? activeChat.id : "",
+        limit: 20,
+      },
+      {
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+        enabled: !!activeChat,
+      },
+    );
+  const messages = data?.pages.flatMap((page) => page.messages) ?? [];
   const [hasEnteredText, setHasEnteredText] = useState<boolean>(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [activeChat, data]); // scroll to bottom whenever chat changes or new data arrives
 
   async function onSend(data: z.infer<typeof schema>) {
     if (!activeChat) return;
 
-    // If it's a group chat (conversation)
-    if ("isGroup" in activeChat && activeChat.isGroup) {
+    // If it's a conversation (group or 1:1)
+    if ("isGroup" in activeChat) {
       await mutation.mutateAsync({
         conversationId: activeChat.id,
         content: data.content,
       });
     }
-    // If it's a one-on-one chat (user)
+    // if it's a one-on-one chat by selecting a user directly
     else if ("email" in activeChat) {
       await mutation.mutateAsync({
         recipientId: activeChat.id,
@@ -63,17 +89,59 @@ export function ChatView() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="h-16 flex items-center px-6 w-full">
-        <h4 className="text-lg font-semibold">{activeChat.name}</h4>
+      <div className="h-16 flex items-center px-6 border-b border-border">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-muted rounded-full" />{" "}
+          {/* avatar placeholder */}
+          <div>
+            <h4 className="text-lg font-semibold">{activeChat.name}</h4>
+            <p className="text-xs text-muted-foreground">Online</p>
+          </div>
+        </div>
       </div>
-      <div className="flex-1"></div>
+      <ScrollArea
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto flex flex-col-reverse px-2 space-y-2"
+        onScroll={(e) => {
+          const top = e.currentTarget.scrollTop === 0;
+          if (top && hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }}
+      >
+        {messages.map((m) => {
+          const isOwn = m.senderId === selfId; // you'll need selfId from session
+          return (
+            <div
+              key={m.id}
+              className={`flex ${isOwn ? "justify-end" : "justify-start"} px-4`}
+            >
+              <div
+                className={`rounded-2xl px-4 py-2 max-w-xs text-sm ${
+                  isOwn
+                    ? "bg-green-600 text-white rounded-br-none"
+                    : "bg-muted text-foreground rounded-bl-none"
+                }`}
+              >
+                {m.content}
+                <div className="text-[10px] opacity-70 mt-1 text-right">
+                  {new Date(m.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </ScrollArea>
       <div className="h-12 w-full flex flex-row space-x-4 px-4">
-        <Button size="lg">
+        <Button size="lg" className="px-4 py-2">
           <Paperclip />
         </Button>
-        <Textarea
-          className="w-full flex-1 min-h-10 max-h-32 overflow-y-auto"
-          placeholder="Type A Message..."
+        <Input
+          className="flex-1 rounded-full text-sm"
+          placeholder="Type a message..."
           {...register("content")}
           value={watch("content")}
           onChange={(e) => {
@@ -81,7 +149,7 @@ export function ChatView() {
             setHasEnteredText(e.target.value.trim().length > 0);
           }}
         />
-        <Button size="lg" onClick={handleSubmit(onSend)}>
+        <Button size="lg" onClick={handleSubmit(onSend)} className="px-4 py-2">
           {hasEnteredText ? <Send /> : <Mic />}
         </Button>
       </div>
