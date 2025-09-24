@@ -117,15 +117,33 @@ const homeRouter = createTRPCRouter({
             senderId,
             content: input.content,
             createdAt: new Date(),
+            messageType: input.mediaType ?? "text",
+            mediaUrl: input.mediaUrl,
           })
           .returning();
 
-        await pusher.trigger(`conversation-${conversationId}`, "new-message", {
-          id: newMessage.id,
-          content: newMessage.content,
-          senderId: newMessage.senderId,
-          createdAt: newMessage.createdAt,
-        });
+        await db
+          .update(conversations)
+          .set({ updatedAt: new Date() })
+          .where(eq(conversations.id, conversationId));
+
+        try {
+          await pusher.trigger(
+            `private-conversation-${conversationId}`,
+            "new-message",
+            {
+              id: newMessage.id,
+              content: newMessage.content,
+              senderId: newMessage.senderId,
+              createdAt: newMessage.createdAt,
+              messageType: newMessage.messageType,
+              mediaUrl: newMessage.mediaUrl,
+            },
+          );
+        } catch (err) {
+          // Don't fail the mutation; message is already stored.
+          console.warn("Pusher Trigger faild", err);
+        }
       } catch (error) {
         if (process.env.NODE_ENV === "development") console.log(error);
         if (error instanceof TRPCError) {

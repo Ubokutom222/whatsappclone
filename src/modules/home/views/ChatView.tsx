@@ -3,10 +3,16 @@ import { useActiveChatContext } from "@/modules/providers/ActiveChatProvider";
 import { useSession } from "@/modules/providers/SessionProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Mic, Paperclip, Send } from "lucide-react";
+import { Mic, Paperclip, Send, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/trpc/client";
-import { useState, useEffect, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,15 +22,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import pusherClient from "@/lib/pusher-client";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/trpc/routers/_app";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type MessagesPage = RouterOutput["home"]["getMessages"];
 type Message = MessagesPage["messages"][number];
+type RealtimeMessage = Omit<Message, "createdAt"> & { createdAt: string };
 
 const schema = z.object({
   content: z.string().trim().min(1, "Message cannot be empty"),
 });
-export function ChatView() {
+
+interface Props {
+  setMobileView?: Dispatch<SetStateAction<"CHATLISTVIEW" | "CHATVIEW">>;
+}
+export function ChatView({ setMobileView }: Props) {
+  const isMobile = useIsMobile();
   const { activeChat } = useActiveChatContext();
   const { session } = useSession();
   const selfId = session?.user.id;
@@ -39,7 +53,6 @@ export function ChatView() {
       toast.error(message);
     },
     onSuccess() {
-      toast.success("Message Sent Successfully");
       resetField("content");
     },
   });
@@ -55,20 +68,33 @@ export function ChatView() {
         enabled: !!activeChat,
       },
     );
-  const messages = data?.pages.flatMap((page) => page.messages) ?? [];
+  const messages = data
+    ? [...data.pages]
+        .flatMap((page) => page.messages)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+    : [];
   const utils = trpc.useUtils();
 
   useEffect(() => {
-    if (!activeChat) return;
-
-    const channel = pusherClient.subscribe(`conversation-${activeChat.id}`);
-
-    channel.bind("new-message", (message: Message) => {
+    if (!activeChat || !("isGroup" in activeChat)) return;
+    const channelName = `private-conversation-${activeChat.id}`;
+    const channel = pusherClient.subscribe(channelName);
+    const handler = (payload: RealtimeMessage) => {
+      const message: Message = {
+        ...payload,
+        createdAt: new Date(payload.createdAt) as unknown as Date,
+      };
       // Optimistically add new message to TRPC cache
       utils.home.getMessages.setInfiniteData(
         { conversationId: activeChat.id, limit: 20 },
         (oldData) => {
           if (!oldData) return oldData;
+          if (oldData.pages[0]?.messages?.some((m) => m.id === message.id)) {
+            return oldData;
+          }
           return {
             ...oldData,
             pages: [
@@ -81,12 +107,14 @@ export function ChatView() {
           };
         },
       );
-    });
+    };
+    channel.bind("new-message", handler);
 
     return () => {
-      pusherClient.unsubscribe(`conversation-${activeChat.id}`);
+      channel.unbind("new-message", handler);
+      pusherClient.unsubscribe(channelName);
     };
-  }, [activeChat]);
+  }, [activeChat, utils]);
 
   const [hasEnteredText, setHasEnteredText] = useState<boolean>(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -127,9 +155,24 @@ export function ChatView() {
   }
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div
+      className={cn(
+        "flex flex-col h-full w-full",
+        isMobile && "h-[calc(100vh_-_5rem)] w-screen",
+      )}
+    >
+      {/* Header */}
       <div className="h-16 flex items-center px-6 border-b border-border">
         <div className="flex items-center space-x-3">
+          {isMobile && setMobileView !== undefined && (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setMobileView("CHATLISTVIEW")}
+            >
+              <ChevronLeft />
+            </Button>
+          )}
           <div className="w-10 h-10 bg-muted rounded-full" />{" "}
           {/* avatar placeholder */}
           <div>
@@ -138,44 +181,53 @@ export function ChatView() {
           </div>
         </div>
       </div>
-      <ScrollArea
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto flex flex-col-reverse px-2 space-y-2"
-        onScroll={(e) => {
-          const top = e.currentTarget.scrollTop === 0;
-          if (top && hasNextPage && !isFetchingNextPage) {
-            fetchNextPage();
-          }
-        }}
-      >
-        {messages.map((m) => {
-          const isOwn = m.senderId === selfId; // you'll need selfId from session
-          return (
-            <div
-              key={m.id}
-              className={`flex ${isOwn ? "justify-end" : "justify-start"} px-4`}
-            >
+
+      {/* Messages */}
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea
+          ref={scrollRef}
+          className={cn(
+            "w-full h-[calc(100vh_-_4rem_-_3.5rem)] flex flex-col-reverse px-2 space-y-2",
+            isMobile && "h-[calc(100vh_-_5rem_-_4rem_-_3.5rem)]",
+          )}
+          onScroll={(e) => {
+            const top = e.currentTarget.scrollTop === 0;
+            if (top && hasNextPage && !isFetchingNextPage) {
+              fetchNextPage();
+            }
+          }}
+        >
+          {messages.map((m) => {
+            const isOwn = m.senderId === selfId;
+            return (
               <div
-                className={`rounded-2xl px-4 py-2 max-w-xs text-sm ${
-                  isOwn
-                    ? "bg-green-600 text-white rounded-br-none"
-                    : "bg-muted text-foreground rounded-bl-none"
-                }`}
+                key={m.id}
+                className={`flex ${isOwn ? "justify-end" : "justify-start"} px-4`}
               >
-                {m.content}
-                <div className="text-[10px] opacity-70 mt-1 text-right">
-                  {new Date(m.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                <div
+                  className={`rounded-2xl px-4 py-2 max-w-xs text-sm ${
+                    isOwn
+                      ? "bg-green-600 text-white rounded-br-none"
+                      : "bg-muted text-foreground rounded-bl-none"
+                  }`}
+                >
+                  {m.content}
+                  <div className="text-[10px] opacity-70 mt-1 text-right">
+                    {new Date(m.createdAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </ScrollArea>
-      <div className="h-12 w-full flex flex-row space-x-4 px-4">
-        <Button size="lg" className="px-4 py-2">
+            );
+          })}
+        </ScrollArea>
+      </div>
+
+      {/* Input */}
+      <div className="h-14 w-full flex items-center space-x-4 px-4 border-t border-border">
+        <Button size="icon" className="px-4 py-2">
           <Paperclip />
         </Button>
         <Input
@@ -188,7 +240,11 @@ export function ChatView() {
             setHasEnteredText(e.target.value.trim().length > 0);
           }}
         />
-        <Button size="lg" onClick={handleSubmit(onSend)} className="px-4 py-2">
+        <Button
+          size="icon"
+          onClick={handleSubmit(onSend)}
+          className="px-4 py-2"
+        >
           {hasEnteredText ? <Send /> : <Mic />}
         </Button>
       </div>
