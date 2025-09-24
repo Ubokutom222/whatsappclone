@@ -10,6 +10,7 @@ import { ChatView } from "./ChatView";
 import { trpc } from "@/trpc/client";
 import { useSession } from "@/modules/providers/SessionProvider";
 import { useActiveChatContext } from "@/modules/providers/ActiveChatProvider";
+import { AnimatePresence, motion } from "motion/react";
 
 export function HomeView() {
   const isMobile = useIsMobile();
@@ -17,6 +18,9 @@ export function HomeView() {
   const [data] = trpc.home.getConversations.useSuspenseQuery();
   const { session } = useSession();
   const { setActiveChat } = useActiveChatContext();
+  const [mobileView, setMobileView] = useState<"CHATLISTVIEW" | "CHATVIEW">(
+    "CHATLISTVIEW",
+  );
 
   const selfId = session?.user.id as string;
 
@@ -32,7 +36,39 @@ export function HomeView() {
 
   // TODO: Develop the Mobile View
   if (isMobile) {
-    return <div></div>;
+    return (
+      <div className="w-screen h-screen flex flex-col">
+        <div className="flex w-full flex-row p-4 h-20">
+          <h1 className="text-4xl font-bold">WhatsApp</h1>
+        </div>
+        <AnimatePresence initial={false}>
+          {mobileView === "CHATLISTVIEW" && (
+            <ScrollArea className="h-full space-y-2" key={mobileView}>
+              {/* No Chat Placeholder */}
+              {data.length > 0 &&
+                data.map((item) => {
+                  const other = item.members.find((m) => m.id !== selfId);
+                  return (
+                    <div
+                      key={item.id}
+                      className="text-xl font-semibold px-4 py-2 rounded-lg hover:bg-muted-foreground/90"
+                      onClick={() => {
+                        setActiveChat(item);
+                        setMobileView("CHATVIEW");
+                      }}
+                    >
+                      {item.isGroup ? item.name : (other?.name ?? "Unknown")}
+                    </div>
+                  );
+                })}
+            </ScrollArea>
+          )}
+          {mobileView === "CHATVIEW" && (
+            <ChatView key={mobileView} setMobileView={setMobileView} />
+          )}
+        </AnimatePresence>
+      </div>
+    );
   }
 
   return (
