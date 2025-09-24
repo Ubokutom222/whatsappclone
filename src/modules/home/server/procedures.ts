@@ -10,6 +10,7 @@ import {
   user,
 } from "@/db/schema";
 import { nanoid } from "nanoid";
+import pusher from "@/lib/pusher";
 
 const homeRouter = createTRPCRouter({
   getSession: protectedProcedure.query(async ({ ctx }) => {
@@ -108,12 +109,22 @@ const homeRouter = createTRPCRouter({
         }
 
         // Insert the message
-        await db.insert(messages).values({
-          id: nanoid(),
-          conversationId,
-          senderId,
-          content: input.content,
-          createdAt: new Date(),
+        const [newMessage] = await db
+          .insert(messages)
+          .values({
+            id: nanoid(),
+            conversationId,
+            senderId,
+            content: input.content,
+            createdAt: new Date(),
+          })
+          .returning();
+
+        await pusher.trigger(`conversation-${conversationId}`, "new-message", {
+          id: newMessage.id,
+          content: newMessage.content,
+          senderId: newMessage.senderId,
+          createdAt: newMessage.createdAt,
         });
       } catch (error) {
         if (process.env.NODE_ENV === "development") console.log(error);
