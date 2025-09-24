@@ -13,6 +13,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 // import { InferSelectModel } from "drizzle-orm";
 // import { messages as messageSchema } from "@/db/schema"
 import { ScrollArea } from "@/components/ui/scroll-area";
+import pusherClient from "@/lib/pusher-client";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "@/trpc/routers/_app";
+
+type RouterOutput = inferRouterOutputs<AppRouter>;
+type MessagesPage = RouterOutput["home"]["getMessages"];
+type Message = MessagesPage["messages"][number];
 
 const schema = z.object({
   content: z.string().trim().min(1, "Message cannot be empty"),
@@ -49,6 +56,38 @@ export function ChatView() {
       },
     );
   const messages = data?.pages.flatMap((page) => page.messages) ?? [];
+  const utils = trpc.useUtils();
+
+  useEffect(() => {
+    if (!activeChat) return;
+
+    const channel = pusherClient.subscribe(`conversation-${activeChat.id}`);
+
+    channel.bind("new-message", (message: Message) => {
+      // Optimistically add new message to TRPC cache
+      utils.home.getMessages.setInfiniteData(
+        { conversationId: activeChat.id, limit: 20 },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: [
+              {
+                ...oldData.pages[0],
+                messages: [message, ...oldData.pages[0].messages],
+              },
+              ...oldData.pages.slice(1),
+            ],
+          };
+        },
+      );
+    });
+
+    return () => {
+      pusherClient.unsubscribe(`conversation-${activeChat.id}`);
+    };
+  }, [activeChat]);
+
   const [hasEnteredText, setHasEnteredText] = useState<boolean>(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
